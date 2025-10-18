@@ -1,0 +1,242 @@
+# ============================================================================
+# Cloud Build Configuration - Moodle LMS (Bitnami Base)
+# Ultra-Low-Cost Configuration with Cold Starts Enabled
+# Project: sms-edu-47
+# Service: moodle-lms
+# ============================================================================
+
+steps:
+  # Step 1: Build Bitnami-based Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-moodle-image'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/moodle-lms:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/moodle-lms:latest'
+      - '--build-arg'
+      - 'BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")'
+      - '--build-arg'
+      - 'BUILD_ID=$BUILD_ID'
+      - '.'
+    timeout: '600s'  # 10 minutes (Bitnami build is much faster)
+
+  # Step 2: Push the Docker image with build ID tag
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-build-id-tag'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/moodle-lms:$BUILD_ID'
+    waitFor:
+      - 'build-moodle-image'
+
+  # Step 3: Push the 'latest' tag
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest-tag'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/moodle-lms:latest'
+    waitFor:
+      - 'build-moodle-image'
+
+  # Step 4: Deploy to Cloud Run with cold starts enabled
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deploy-to-cloud-run'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "============================================"
+        echo "Deploying Moodle LMS to Cloud Run"
+        echo "Configuration: Ultra-Low-Cost with Cold Starts"
+        echo "============================================"
+        echo ""
+
+        # Deploy to Cloud Run with Moodle 5.1 environment variables
+        # moodlehq image will auto-detect /var/www/html/public/ and configure Apache
+        # Cloud Storage bucket mounted as native volume for persistent /moodledata
+        gcloud run deploy moodle-lms \
+          --image=gcr.io/$PROJECT_ID/moodle-lms:$BUILD_ID \
+          --platform=managed \
+          --region=us-central1 \
+          --allow-unauthenticated \
+          --memory=4Gi \
+          --cpu=1 \
+          --timeout=300 \
+          --max-instances=5 \
+          --min-instances=0 \
+          --concurrency=80 \
+          --execution-environment=gen2 \
+          --port=80 \
+          --add-cloudsql-instances=sms-edu-47:us-central1:sms-edu-db \
+          --add-volume=name=moodledata,type=cloud-storage,bucket=moodle-lms-data-sms-edu-47,mount-options=implicit-dirs:file-cache-capacity-mb=2048:metadata-cache-ttl-secs=300:stat-cache-ttl-secs=300 \
+          --add-volume-mount=volume=moodledata,mount-path=/moodledata \
+          --set-env-vars="MOODLE_DB_HOST=/cloudsql/sms-edu-47:us-central1:sms-edu-db,MOODLE_DB_NAME=moodle_lms,MOODLE_DB_USER=moodle_user,MOODLE_DATAROOT=/moodledata" \
+          --set-secrets="MOODLE_DB_PASSWORD=moodle-db-password:latest,MOODLE_CRON_PASSWORD=moodle-cron-password:latest" \
+          --project=$PROJECT_ID
+
+        echo ""
+        echo "============================================"
+        echo "Deployment Complete!"
+        echo "============================================"
+
+    waitFor:
+      - 'push-latest-tag'
+
+  # Step 5: Get service URL and update MOODLE_WWWROOT
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'configure-service-url'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Getting service URL..."
+
+        SERVICE_URL=$$(gcloud run services describe moodle-lms \
+          --platform=managed \
+          --region=us-central1 \
+          --format='value(status.url)' \
+          --project=$PROJECT_ID)
+
+        echo "Service URL: $$SERVICE_URL"
+        echo "$$SERVICE_URL" > /workspace/moodle_url.txt
+
+        # Update with WWW root URL
+        echo "Updating MOODLE_WWWROOT environment variable..."
+        gcloud run services update moodle-lms \
+          --update-env-vars="MOODLE_WWWROOT=$$SERVICE_URL" \
+          --region=us-central1 \
+          --project=$PROJECT_ID
+
+        echo "MOODLE_WWWROOT set to: $$SERVICE_URL"
+
+    waitFor:
+      - 'deploy-to-cloud-run'
+
+  # Step 6: Test deployment health
+  - name: 'gcr.io/cloud-builders/curl'
+    id: 'test-deployment'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo ""
+        echo "============================================"
+        echo "Testing Moodle Deployment"
+        echo "============================================"
+        echo ""
+
+        SERVICE_URL=$$(cat /workspace/moodle_url.txt)
+
+        # Test health check endpoint
+        echo "Testing health check endpoint..."
+        HTTP_CODE=$$(curl -s -o /dev/null -w "%{http_code}" $$SERVICE_URL/healthcheck.php)
+
+        if [ "$$HTTP_CODE" = "200" ]; then
+          echo "✅ Health check PASSED (HTTP $$HTTP_CODE)"
+        else
+          echo "⚠️  Health check returned HTTP $$HTTP_CODE"
+        fi
+
+        # Test main page (may redirect to install if first time)
+        echo ""
+        echo "Testing main page..."
+        HTTP_CODE=$$(curl -s -o /dev/null -w "%{http_code}" -L $$SERVICE_URL)
+
+        if [ "$$HTTP_CODE" = "200" ]; then
+          echo "✅ Main page accessible (HTTP $$HTTP_CODE)"
+        else
+          echo "ℹ️  Main page returned HTTP $$HTTP_CODE (may need installation)"
+        fi
+
+        echo ""
+        echo "============================================"
+        echo "Moodle LMS Deployment Summary"
+        echo "============================================"
+        echo "Service Name:    moodle-lms"
+        echo "Service URL:     $$SERVICE_URL"
+        echo "Health Check:    $$SERVICE_URL/healthcheck.php"
+        echo "Installation:    $$SERVICE_URL/install.php"
+        echo "Admin Login:     $$SERVICE_URL/login/"
+        echo ""
+        echo "Database:        moodle_lms (Cloud SQL)"
+        echo "Database Host:   /cloudsql/sms-edu-47:us-central1:sms-edu-db"
+        echo "Database User:   moodle_user"
+        echo ""
+        echo "Configuration:   Ultra-Low-Cost"
+        echo "Min Instances:   0 (cold starts enabled)"
+        echo "Max Instances:   5"
+        echo "Memory:          2Gi"
+        echo "CPU:             2 vCPU"
+        echo ""
+        echo "Region:          us-central1"
+        echo "Build ID:        $BUILD_ID"
+        echo "Project:         $PROJECT_ID"
+        echo ""
+        echo "Estimated Cost:  $$1-3/month (development)"
+        echo "                 $$2-5/month (light production)"
+        echo "============================================"
+        echo ""
+        echo "Next Steps:"
+        echo "1. Access $$SERVICE_URL/install.php to complete setup"
+        echo "2. Or wait for Bitnami auto-install (may take 2-3 minutes)"
+        echo "3. Login with username 'admin' and password from Secret Manager"
+        echo "4. Configure web services for SMS integration"
+        echo "============================================"
+
+    waitFor:
+      - 'configure-service-url'
+
+# Images to store in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/moodle-lms:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/moodle-lms:latest'
+
+# Build timeout (all steps combined)
+timeout: '1200s'  # 20 minutes total
+
+# Build machine configuration
+options:
+  machineType: 'N1_HIGHCPU_8'  # Fast build machine
+  logging: CLOUD_LOGGING_ONLY
+  logStreamingOption: STREAM_ON
+  substitutionOption: ALLOW_LOOSE
+
+# Custom substitutions (can override at runtime)
+substitutions:
+  _REGION: 'us-central1'
+  _SERVICE_NAME: 'moodle-lms'
+  _MEMORY: '4Gi'
+  _CPU: '1'
+  _MIN_INSTANCES: '0'
+  _MAX_INSTANCES: '5'
+
+# ============================================================================
+# Deployment Instructions
+# ============================================================================
+#
+# Prerequisites:
+#   1. Moodle admin password stored in Secret Manager:
+#      echo -n "Cor4eduAdmin2025!" | gcloud secrets create moodle-admin-password \
+#        --data-file=- --replication-policy=automatic --project=sms-edu-47
+#
+#   2. Cloud SQL instance 'sms-edu-db' running with 'moodle_lms' database
+#
+#   3. Database password in Secret Manager: 'moodle-db-password'
+#
+# Deploy:
+#   cd moodle-main
+#   gcloud builds submit --config cloudbuild.yaml --project=sms-edu-47
+#
+# Monitor build:
+#   gcloud builds log --stream --project=sms-edu-47
+#
+# Check deployment:
+#   gcloud run services describe moodle-lms --region=us-central1 --project=sms-edu-47
+#
+# View logs:
+#   gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=moodle-lms" \
+#     --limit=50 --project=sms-edu-47
+#
+# ============================================================================

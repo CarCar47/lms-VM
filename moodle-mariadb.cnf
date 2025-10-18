@@ -1,0 +1,443 @@
+# ============================================================================
+# MariaDB Configuration for Moodle 5.1
+# Optimized for Ubuntu 22.04 LTS
+# Industry Standard Configuration
+# ============================================================================
+#
+# This configuration optimizes MariaDB for Moodle workloads
+# Designed for 2-4 vCPU, 4GB RAM systems handling 40-200 concurrent users
+#
+# Installation:
+#   1. Copy this file to: /etc/mysql/mariadb.conf.d/99-moodle.cnf
+#   2. Adjust buffer pool size based on available RAM (see TUNING GUIDE below)
+#   3. Test config: mysqld --verbose --help | grep -A 1 "Default options"
+#   4. Restart MariaDB: systemctl restart mariadb
+#   5. Verify settings: mysql -e "SHOW VARIABLES LIKE 'innodb%';"
+#
+# Performance Notes:
+#   - InnoDB is required for Moodle (DO NOT use MyISAM)
+#   - Buffer pool should be 50-70% of available RAM
+#   - Adjust based on server size (see TUNING GUIDE)
+#
+# References:
+#   - Moodle Performance Docs: https://docs.moodle.org/en/Performance
+#   - MariaDB Optimization: https://mariadb.com/kb/en/optimization-and-tuning/
+#
+# ============================================================================
+
+[mysqld]
+
+# ============================================================================
+# BASIC SETTINGS
+# ============================================================================
+
+# Server identification
+server-id = 1
+
+# Listen on all interfaces (use 127.0.0.1 for localhost only)
+bind-address = 127.0.0.1
+
+# Port number
+port = 3306
+
+# Data directory
+datadir = /var/lib/mysql
+
+# Socket file
+socket = /var/run/mysqld/mysqld.sock
+
+# Process ID file
+pid-file = /var/run/mysqld/mysqld.pid
+
+# Temporary directory
+tmpdir = /tmp
+
+# ============================================================================
+# CHARACTER SET AND COLLATION (REQUIRED FOR MOODLE)
+# ============================================================================
+
+# Moodle requires utf8mb4 for full Unicode support
+# This includes emojis and special characters
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
+
+# Ensure all new connections use utf8mb4
+init_connect = 'SET NAMES utf8mb4'
+
+# Skip character set in handshake
+skip-character-set-client-handshake
+
+# ============================================================================
+# INNODB CONFIGURATION (PRIMARY STORAGE ENGINE FOR MOODLE)
+# ============================================================================
+
+# Use InnoDB as default storage engine
+default_storage_engine = InnoDB
+
+# --- InnoDB Buffer Pool (MOST IMPORTANT SETTING) ---
+
+# InnoDB buffer pool size
+# This is the #1 performance setting for MySQL/MariaDB
+# Formula: 50-70% of available RAM (dedicated database server)
+#          30-50% of available RAM (shared server with web server)
+#
+# For 4GB RAM system (shared): 2GB buffer pool
+# For 4GB RAM system (dedicated): 3GB buffer pool
+# For 8GB RAM system (shared): 4GB buffer pool
+innodb_buffer_pool_size = 2G
+
+# Number of buffer pool instances (improves concurrency)
+# Rule: 1 instance per GB of buffer pool
+# For 2GB buffer pool: 2 instances
+# For 4GB buffer pool: 4 instances
+innodb_buffer_pool_instances = 2
+
+# --- InnoDB Log Files ---
+
+# InnoDB log file size
+# Larger = better performance for write-heavy workloads
+# Moodle recommendation: 256M - 512M
+# Trade-off: Larger files = slower crash recovery
+innodb_log_file_size = 256M
+
+# InnoDB log buffer size
+# Memory buffer for log writes before flushing to disk
+# 16M is sufficient for most Moodle installations
+innodb_log_buffer_size = 16M
+
+# Log flushing behavior
+# 0 = flush every second (fastest, less safe)
+# 1 = flush on each commit (slowest, safest - ACID compliant)
+# 2 = flush every second, write on commit (good balance)
+# Moodle recommendation: 2 (good performance, low risk)
+innodb_flush_log_at_trx_commit = 2
+
+# --- InnoDB File Format ---
+
+# File-per-table mode (recommended)
+# Each table gets its own .ibd file (easier to manage)
+innodb_file_per_table = 1
+
+# File format (Barracuda supports COMPRESSED and DYNAMIC row formats)
+innodb_file_format = Barracuda
+
+# Default row format
+innodb_default_row_format = DYNAMIC
+
+# --- InnoDB I/O Configuration ---
+
+# Flush method (how InnoDB interacts with filesystem)
+# O_DIRECT = bypass OS cache (recommended for dedicated DB servers)
+# fsync = use OS cache (better for shared servers)
+# Moodle recommendation: O_DIRECT
+innodb_flush_method = O_DIRECT
+
+# Number of I/O threads for background operations
+# Read threads: handle background read operations
+innodb_read_io_threads = 4
+
+# Write threads: handle background write operations
+innodb_write_io_threads = 4
+
+# --- InnoDB Performance ---
+
+# Auto-increment lock mode
+# 2 = interleaved mode (best performance for concurrent inserts)
+innodb_autoinc_lock_mode = 2
+
+# Adaptive hash index (automatically creates indexes for hot data)
+innodb_adaptive_hash_index = ON
+
+# Change buffering (optimizes secondary index updates)
+# all = buffer all operations (good for write-heavy workloads)
+innodb_change_buffering = all
+
+# ============================================================================
+# QUERY CACHE (HELPS WITH REPETITIVE QUERIES)
+# ============================================================================
+
+# Query cache type
+# 0 = OFF (disable query cache)
+# 1 = ON (cache all queries except SELECT SQL_NO_CACHE)
+# 2 = DEMAND (cache only SELECT SQL_CACHE queries)
+# Moodle has many repetitive queries, so cache helps
+query_cache_type = 1
+
+# Query cache size
+# 32M is sufficient for most Moodle installations
+# Too large can hurt performance (cache pruning overhead)
+query_cache_size = 32M
+
+# Maximum size of individual cached query results
+query_cache_limit = 2M
+
+# Minimum query result size to cache
+query_cache_min_res_unit = 2K
+
+# ============================================================================
+# CONNECTION SETTINGS
+# ============================================================================
+
+# Maximum number of simultaneous connections
+# Formula: (pm.max_children from PHP-FPM + 10% safety margin)
+# For pm.max_children = 40: max_connections = 50
+# For pm.max_children = 80: max_connections = 100
+max_connections = 100
+
+# Maximum allowed packet size (for large queries/data)
+# Moodle recommendation: 64M (handles file uploads via DB)
+max_allowed_packet = 64M
+
+# Connection timeout (seconds)
+connect_timeout = 10
+
+# Wait timeout for idle connections (seconds)
+# Close idle connections after 2 hours (matches Moodle session timeout)
+wait_timeout = 7200
+interactive_timeout = 7200
+
+# ============================================================================
+# TABLE CACHE
+# ============================================================================
+
+# Table open cache (number of open tables cached)
+# Reduces overhead of opening tables repeatedly
+# Formula: max_connections * number_of_tables_per_query
+# For 100 connections, ~10 tables per query: 1000-2000
+table_open_cache = 2000
+
+# Table definition cache
+# Caches .frm file definitions
+table_definition_cache = 1000
+
+# ============================================================================
+# THREAD SETTINGS
+# ============================================================================
+
+# Thread cache size (reuse threads instead of creating new ones)
+# Formula: max_connections / 3
+# For 100 max_connections: 30-40
+thread_cache_size = 40
+
+# Thread stack size (stack size for each thread)
+thread_stack = 256K
+
+# ============================================================================
+# TEMPORARY TABLES
+# ============================================================================
+
+# Maximum size of internal in-memory temporary tables
+# Larger = fewer disk writes for complex queries
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+# ============================================================================
+# SORT AND JOIN BUFFERS
+# ============================================================================
+
+# Sort buffer size (per connection, for ORDER BY and GROUP BY)
+# Moodle has many sorted queries (grade reports, user lists)
+# 2M is a good balance (don't make too large - allocated per connection!)
+sort_buffer_size = 2M
+
+# Join buffer size (for joins without indexes)
+# 2M is sufficient for most Moodle queries
+join_buffer_size = 2M
+
+# Read buffer size (for sequential scans)
+read_buffer_size = 2M
+
+# Read RND buffer size (for sorted reads)
+read_rnd_buffer_size = 4M
+
+# ============================================================================
+# BINARY LOGGING (OPTIONAL - FOR POINT-IN-TIME RECOVERY)
+# ============================================================================
+
+# Enable binary logging (uncomment for production with backups)
+# Binary logs allow point-in-time recovery and replication
+# Trade-off: ~10% performance overhead, uses disk space
+#
+# log_bin = /var/log/mysql/mysql-bin.log
+# expire_logs_days = 7
+# max_binlog_size = 100M
+# binlog_format = ROW
+# sync_binlog = 1
+
+# ============================================================================
+# SLOW QUERY LOG (FOR PERFORMANCE DEBUGGING)
+# ============================================================================
+
+# Enable slow query log
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+
+# Queries taking longer than this are logged (seconds)
+# Moodle admin pages should load in <5 seconds
+# Log queries taking >2 seconds for optimization review
+long_query_time = 2
+
+# Log queries that don't use indexes
+log_queries_not_using_indexes = 1
+
+# Limit number of non-indexed queries logged per minute
+log_throttle_queries_not_using_indexes = 10
+
+# ============================================================================
+# ERROR LOG
+# ============================================================================
+
+log_error = /var/log/mysql/error.log
+log_warnings = 2
+
+# ============================================================================
+# PERFORMANCE SCHEMA (ADVANCED MONITORING)
+# ============================================================================
+
+# Performance schema (provides detailed performance metrics)
+# Disable on small systems to save RAM (~400MB overhead)
+# Enable on larger systems for advanced troubleshooting
+performance_schema = OFF
+
+# If enabled, configure performance schema:
+# performance_schema_max_table_instances = 12500
+# performance_schema_max_table_handles = 4000
+
+# ============================================================================
+# SECURITY SETTINGS
+# ============================================================================
+
+# Don't resolve hostnames (faster connections, more secure)
+skip_name_resolve = 1
+
+# Disable LOCAL INFILE (prevents unauthorized file reads)
+local_infile = 0
+
+# SQL mode (enforce data integrity)
+# Moodle recommendation: strict mode
+sql_mode = STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+
+# ============================================================================
+# REPLICATION (OPTIONAL - FOR HIGH AVAILABILITY)
+# ============================================================================
+
+# Uncomment for master-slave replication setup
+#
+# # Master configuration:
+# server-id = 1
+# log_bin = /var/log/mysql/mysql-bin.log
+# binlog_do_db = moodle_lms
+#
+# # Slave configuration:
+# server-id = 2
+# relay-log = /var/log/mysql/mysql-relay-bin
+# read_only = 1
+
+# ============================================================================
+# TUNING GUIDE BY SERVER SIZE
+# ============================================================================
+#
+# --- 2GB RAM (e2-small) ---
+# innodb_buffer_pool_size = 1G
+# innodb_buffer_pool_instances = 1
+# max_connections = 50
+# table_open_cache = 1000
+# query_cache_size = 16M
+# tmp_table_size = 32M
+# max_heap_table_size = 32M
+#
+# --- 4GB RAM (e2-medium) ---
+# innodb_buffer_pool_size = 2G
+# innodb_buffer_pool_instances = 2
+# max_connections = 100
+# table_open_cache = 2000
+# query_cache_size = 32M
+# tmp_table_size = 64M
+# max_heap_table_size = 64M
+#
+# --- 8GB RAM (e2-standard-2) ---
+# innodb_buffer_pool_size = 4G
+# innodb_buffer_pool_instances = 4
+# max_connections = 150
+# table_open_cache = 3000
+# query_cache_size = 64M
+# tmp_table_size = 128M
+# max_heap_table_size = 128M
+#
+# --- 16GB RAM (e2-standard-4) ---
+# innodb_buffer_pool_size = 8G
+# innodb_buffer_pool_instances = 8
+# max_connections = 200
+# table_open_cache = 4000
+# query_cache_size = 128M
+# tmp_table_size = 256M
+# max_heap_table_size = 256M
+#
+# ============================================================================
+# MONITORING COMMANDS
+# ============================================================================
+#
+# Check buffer pool usage:
+#   mysql -e "SHOW ENGINE INNODB STATUS\G" | grep -A 10 "BUFFER POOL"
+#
+# Check query cache usage:
+#   mysql -e "SHOW STATUS LIKE 'Qcache%';"
+#
+# Check connection usage:
+#   mysql -e "SHOW STATUS LIKE 'Threads%';"
+#   mysql -e "SHOW STATUS LIKE 'Max_used_connections';"
+#
+# Check table cache efficiency:
+#   mysql -e "SHOW STATUS LIKE 'Opened_tables';"
+#   mysql -e "SHOW STATUS LIKE 'Open_tables';"
+#
+# View slow queries:
+#   mysqldumpslow -t 10 /var/log/mysql/mysql-slow.log
+#
+# Check InnoDB status:
+#   mysql -e "SHOW ENGINE INNODB STATUS\G"
+#
+# View current configuration:
+#   mysql -e "SHOW VARIABLES;"
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# Problem: "Too many connections" error
+# Solution: Increase max_connections or reduce PHP-FPM max_children
+#
+# Problem: High disk I/O
+# Solution: Increase innodb_buffer_pool_size (more caching in RAM)
+#
+# Problem: Slow queries
+# Solution: Check slow query log, add indexes, increase buffer sizes
+#
+# Problem: Out of memory crashes
+# Solution: Reduce innodb_buffer_pool_size or increase server RAM
+#
+# Problem: Large ibdata1 file
+# Solution: Enable innodb_file_per_table and rebuild tables
+#
+# ============================================================================
+
+[client]
+# Default character set for client connections
+default-character-set = utf8mb4
+
+[mysql]
+# Default character set for mysql CLI
+default-character-set = utf8mb4
+
+[mysqldump]
+# Quick dump (don't buffer entire table in memory)
+quick
+
+# Quote column names (safer)
+quote-names
+
+# Maximum packet size for mysqldump
+max_allowed_packet = 64M
+
+# Default character set for mysqldump
+default-character-set = utf8mb4

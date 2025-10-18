@@ -1,0 +1,48 @@
+# Environment and sensitive files
+.env
+.env.local
+.env.production
+*.env.backup
+config.php.backup
+
+# Moodle data directory (never commit user data)
+moodledata/
+
+# Database dumps (never commit live data)
+*.sql.gz
+*.sql.bak
+backup-*.tar.gz
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+tmp/
+.cache/
+
+# Git
+.git/
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+*.ppk
+
+# Secrets
+credentials.json
+service-account.json
+secrets/
