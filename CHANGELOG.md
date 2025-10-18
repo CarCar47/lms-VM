@@ -8,11 +8,150 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Automated backup scheduling
-- Enhanced monitoring dashboard
 - API integration with SMS for user provisioning
 - Additional plugins (forum, quiz, assignment)
 - Email notification templates
+- Multi-region deployment support
+- Advanced CDN configurations
+
+---
+
+## [1.1.0] - 2025-10-18
+
+### Summary
+Production Readiness Edition - Comprehensive post-deployment automation and enterprise-grade operational enhancements for the Moodle VM golden copy template.
+
+### Added
+
+#### Production Setup Documentation
+- **PRODUCTION-SETUP.md**:
+  - Complete 5-step production readiness guide
+  - Step 1: Fix Moodle Cron configuration for Moodle 5.1
+  - Step 2: SSL/HTTPS setup with Let's Encrypt
+  - Step 3: Google Cloud Storage automated backups (3-2-1 rule)
+  - Step 4: Automated maintenance cron jobs
+  - Step 5: Production validation checklist
+  - Comprehensive troubleshooting section
+  - Client-agnostic with placeholder variables
+
+#### Cron Job Templates
+- **templates/cron-examples/**:
+  - `moodle-cron.template` - Scheduled tasks (every minute)
+  - `moodle-backup.template` - Daily backups at 2:00 AM
+  - `moodle-database-maintenance.template` - Daily optimization at 3:00 AM
+  - `moodle-security-check.template` - Weekly audits Sunday 4:00 AM
+  - All templates include installation instructions and documentation
+
+#### Documentation Enhancements
+- **README.md**:
+  - New "Production Readiness Checklist" section (after Quick Start)
+  - 5-step checklist with time estimates
+  - Quick overview of each production task
+  - Clear explanation of why production setup matters
+  - Reference links to PRODUCTION-SETUP.md
+
+- **.env.template**:
+  - Enhanced documentation with production requirements
+  - Clear section headers for all variable categories
+  - IMPORTANT notes for SSL/HTTPS and backup configuration
+  - References to PRODUCTION-SETUP.md for context
+
+### Fixed
+
+#### Moodle 5.1 Cron Path Issue
+- **Issue**: Moodle cron configured with wrong path (`/var/www/html/moodle/admin/cli/cron.php`)
+- **Root Cause**: Moodle 5.1 uses new directory structure without `/moodle/` subdirectory
+- **Fix**: Updated cron path to `/var/www/html/admin/cli/cron.php`
+- **Impact**: Moodle scheduled tasks now execute correctly every minute
+
+### Production Setup Workflow
+
+This release establishes the complete production workflow:
+
+1. **Deploy VM** using `deploy-production-golden.sh` (30-40 minutes)
+2. **Configure Production** using PRODUCTION-SETUP.md guide (35-45 minutes)
+   - Fix Moodle cron (5 min)
+   - Configure SSL/HTTPS with domain (10-15 min)
+   - Setup GCS backups (10 min)
+   - Install automated maintenance (5 min)
+   - Validate production systems (5 min)
+3. **Result**: Fully automated, enterprise-ready Moodle deployment
+
+### Production Automation
+
+**Automated Cron Schedule** (after production setup):
+| Task | Frequency | Log File |
+|------|-----------|----------|
+| Moodle Cron | Every 1 minute | `/var/log/syslog` |
+| Automated Backups | Daily at 2:00 AM | `/var/log/moodle-backup.log` |
+| Database Maintenance | Daily at 3:00 AM | `/var/log/moodle-maintenance.log` |
+| Security Checks | Weekly Sunday 4:00 AM | `/var/log/moodle-security.log` |
+| SSL Renewal | Twice daily (systemd) | `/var/log/letsencrypt/letsencrypt.log` |
+
+**Backup Strategy** (3-2-1 Rule):
+- 3 copies of data (original + local + cloud)
+- 2 storage types (VM disk + Google Cloud Storage)
+- 1 offsite location (GCS bucket with lifecycle policies)
+
+**Retention Policies**:
+- Daily backups: 7 days local, 90 days GCS
+- Weekly backups: 28 days local, 90 days GCS
+- Monthly backups: 365 days local and GCS
+
+### Security Enhancements
+
+**SSL/HTTPS Automation**:
+- Let's Encrypt SSL certificates with certbot
+- Automatic HTTP→HTTPS redirect
+- Auto-renewal via systemd timer (twice daily)
+- Certificate expiration monitoring in security checks
+
+**File Templates for Deployment**:
+- All cron templates include proper permissions (644)
+- Templates follow industry standards
+- Easy copy-paste installation commands
+- Comprehensive inline documentation
+
+### Benefits
+
+**Without Production Setup** (v1.0.0 only):
+- ❌ Moodle scheduled tasks never run
+- ❌ HTTP-only access (insecure)
+- ❌ No automated backups (data loss risk)
+- ❌ Manual maintenance required
+
+**With Production Setup** (v1.1.0):
+- ✅ Fully automated operations
+- ✅ Enterprise-grade security (HTTPS, auto-renewal)
+- ✅ Disaster recovery ready (offsite backups)
+- ✅ Self-maintaining system (daily optimization, weekly audits)
+
+### Version History Update
+
+| Version | Date | Type | Description |
+|---------|------|------|-------------|
+| 1.1.0 | 2025-10-18 | Minor | Production readiness automation and documentation |
+| 1.0.0 | 2025-10-17 | Major | Initial VM golden copy deployment |
+
+### Contributors
+- Carlos Rivera (CarCar47) - Lead Developer
+- Claude Code - Development Assistant & Documentation
+
+### Upgrade from 1.0.0 to 1.1.0
+
+**No code changes required** - This is a documentation and template release.
+
+**Steps**:
+1. Pull latest from GitHub: `git pull origin main`
+2. Review new files:
+   - `PRODUCTION-SETUP.md`
+   - `templates/cron-examples/*.template`
+   - Updated `README.md` (Production Readiness Checklist section)
+   - Updated `.env.template`
+3. Follow production setup guide for existing deployments
+4. Install cron templates on running VMs (see PRODUCTION-SETUP.md)
+
+**Estimated Time**: 35-45 minutes to apply production setup to existing VM
 
 ---
 

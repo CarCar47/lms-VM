@@ -1,0 +1,32 @@
+# ============================================================================
+# Moodle Database Maintenance Cron Template
+# ============================================================================
+#
+# Purpose: Automated database optimization and maintenance
+# Frequency: Daily at 3:00 AM (runs AFTER backups complete)
+# Log: /var/log/moodle-maintenance.log
+#
+# What This Does:
+#   - Analyzes database tables (updates statistics for query optimizer)
+#   - Optimizes tables (defragments and reclaims space)
+#   - Repairs corrupted tables (if any)
+#   - Checks table integrity
+#
+# Installation:
+#   sudo cp moodle-database-maintenance.template /etc/cron.d/moodle-database-maintenance
+#   sudo chmod 644 /etc/cron.d/moodle-database-maintenance
+#
+# Manual Test:
+#   sudo bash /opt/moodle-deployment/database-maintenance.sh
+#
+# Benefits:
+#   - Improved query performance
+#   - Reduced disk space usage
+#   - Prevention of table corruption
+#   - Automatic repair of minor issues
+#
+# IMPORTANT: Runs at 3:00 AM to avoid conflicts with backup (2:00 AM)
+# ============================================================================
+
+# Run database maintenance daily at 3:00 AM (after backups)
+0 3 * * * root /bin/bash /opt/moodle-deployment/database-maintenance.sh >> /var/log/moodle-maintenance.log 2>&1

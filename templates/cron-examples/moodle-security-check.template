@@ -1,0 +1,35 @@
+# ============================================================================
+# Moodle Security Check Cron Template
+# ============================================================================
+#
+# Purpose: Automated weekly security audits and monitoring
+# Frequency: Weekly on Sunday at 4:00 AM
+# Log: /var/log/moodle-security.log
+#
+# What This Checks:
+#   - File permissions on critical directories
+#   - Failed login attempts (potential brute force attacks)
+#   - SSL certificate expiration dates
+#   - Available security updates
+#   - Disk space usage
+#   - Service status (Apache, MariaDB, etc.)
+#
+# Installation:
+#   sudo cp moodle-security-check.template /etc/cron.d/moodle-security-check
+#   sudo chmod 644 /etc/cron.d/moodle-security-check
+#
+# Manual Test:
+#   sudo bash /opt/moodle-deployment/moodle-security-check.sh
+#
+# Benefits:
+#   - Early detection of security issues
+#   - Proactive monitoring of system health
+#   - Compliance with security best practices
+#   - Automated audit trail
+#
+# Cron Format Explanation:
+#   0 4 * * 0 = Minute 0, Hour 4 (4:00 AM), Any day, Any month, Sunday (0)
+# ============================================================================
+
+# Run security check weekly on Sunday at 4:00 AM
+0 4 * * 0 root /bin/bash /opt/moodle-deployment/moodle-security-check.sh >> /var/log/moodle-security.log 2>&1

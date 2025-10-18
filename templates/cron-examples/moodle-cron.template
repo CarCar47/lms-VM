@@ -1,0 +1,20 @@
+# ============================================================================
+# Moodle Cron Job Template
+# ============================================================================
+#
+# Purpose: Runs Moodle's scheduled tasks (cache cleanup, session cleanup, etc.)
+# Frequency: Every 1 minute (official Moodle recommendation)
+# Log: /var/log/syslog
+#
+# Installation:
+#   sudo cp moodle-cron.template /etc/cron.d/moodle
+#   sudo chmod 644 /etc/cron.d/moodle
+#
+# Verification:
+#   sudo -u www-data /usr/bin/php /var/www/html/admin/cli/cron.php
+#
+# IMPORTANT: Moodle 5.1 uses /var/www/html/admin/cli/cron.php (NOT /moodle/)
+# ============================================================================
+
+# Run Moodle cron every minute
+* * * * * www-data /usr/bin/php /var/www/html/admin/cli/cron.php > /dev/null 2>&1

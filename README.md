@@ -432,6 +432,73 @@ bash deploy-production-golden.sh moodle-client3 --skip-optional --yes
 
 ---
 
+## Production Readiness Checklist
+
+After deploying your VM, complete these **5 essential steps** to ensure enterprise-grade security, data protection, and automation:
+
+| Step | Task | Time Required | Documentation |
+|------|------|---------------|---------------|
+| ☐ 1 | **Fix Moodle Cron** | 5 minutes | [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md#step-1-fix-moodle-cron-configuration) |
+| ☐ 2 | **Configure SSL/HTTPS with Domain** | 10-15 minutes | [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md#step-2-configure-sslhttps-with-domain) |
+| ☐ 3 | **Setup Google Cloud Storage Backups** | 10 minutes | [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md#step-3-configure-google-cloud-storage-backups) |
+| ☐ 4 | **Install Automated Maintenance Crons** | 5 minutes | [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md#step-4-install-automated-maintenance-crons) |
+| ☐ 5 | **Validate Production Systems** | 5 minutes | [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md#step-5-production-validation) |
+
+### Quick Overview
+
+**Step 1: Fix Moodle Cron (REQUIRED)**
+- **Issue**: Moodle shows warning "cron.php has never been run"
+- **Fix**: Update `/etc/cron.d/moodle` to correct path for Moodle 5.1
+- **Result**: Scheduled tasks run every minute (cache cleanup, sessions, etc.)
+
+**Step 2: Configure SSL/HTTPS (REQUIRED)**
+- **Issue**: Site only accessible via HTTP and IP address
+- **Requirements**: Domain name + DNS A record
+- **Fix**: Use certbot to obtain Let's Encrypt SSL certificate
+- **Result**: HTTPS with valid certificate + auto-renewal
+
+**Step 3: Setup GCS Backups (REQUIRED)**
+- **Issue**: No offsite backup strategy
+- **Requirements**: GCS bucket name
+- **Fix**: Configure automated backups to Google Cloud Storage
+- **Result**: Daily/weekly/monthly backups with 3-2-1 rule
+
+**Step 4: Install Automated Maintenance (RECOMMENDED)**
+- **Issue**: Manual database maintenance required
+- **Fix**: Install cron jobs for database optimization and security checks
+- **Result**: Automated daily DB maintenance + weekly security audits
+
+**Step 5: Validate Production (REQUIRED)**
+- **Issue**: Need to verify all systems working correctly
+- **Fix**: Run validation checks for HTTPS, backups, storage, resources
+- **Result**: Confirmed production-ready deployment
+
+### Why These Steps Matter
+
+**Without production setup:**
+- ❌ Moodle scheduled tasks never run (broken functionality)
+- ❌ Insecure HTTP-only access (vulnerable to attacks)
+- ❌ No automated backups (data loss risk)
+- ❌ Manual maintenance required (operational burden)
+
+**With production setup:**
+- ✅ Fully automated operations
+- ✅ Enterprise-grade security (HTTPS, SSL auto-renewal)
+- ✅ Disaster recovery ready (automated offsite backups)
+- ✅ Self-maintaining system (daily optimization, weekly audits)
+
+### Complete Setup Guide
+
+For detailed step-by-step instructions with all commands, troubleshooting, and examples, see:
+
+**📖 [PRODUCTION-SETUP.md](PRODUCTION-SETUP.md)** - Comprehensive production readiness guide
+
+**Estimated Total Time**: 35-45 minutes for all 5 steps
+
+**Template Files**: See `templates/cron-examples/` for cron job templates
+
+---
+
 ## ⚠️ Moodle 5.1 Critical Configuration Notes
 
 **IMPORTANT:** Read this section before deployment to avoid common configuration issues.

@@ -1,0 +1,38 @@
+# ============================================================================
+# Moodle Automated Backup Cron Template
+# ============================================================================
+#
+# Purpose: Automated daily backups to Google Cloud Storage
+# Frequency: Daily at 2:00 AM
+# Log: /var/log/moodle-backup.log
+#
+# Prerequisites:
+#   1. Configure environment variables in /etc/environment.d/moodle-backup.conf:
+#      export MOODLE_BACKUP_BUCKET="your-backup-bucket"
+#      export GCP_REGION="us-central1"
+#
+#   2. Create GCS bucket:
+#      gsutil mb -p YOUR_PROJECT_ID -l YOUR_REGION gs://your-backup-bucket
+#
+#   3. Apply lifecycle policy (see backup-vm.sh for policy template)
+#
+# Installation:
+#   sudo cp moodle-backup.template /etc/cron.d/moodle-backup
+#   sudo chmod 644 /etc/cron.d/moodle-backup
+#
+# Manual Test:
+#   sudo -E bash /opt/moodle-deployment/backup-vm.sh
+#
+# Backup Strategy (3-2-1 Rule):
+#   - 3 copies of data (original + 2 backups)
+#   - 2 different storage types (local disk + cloud storage)
+#   - 1 offsite backup (Google Cloud Storage)
+#
+# Retention Policy:
+#   - Daily backups: 7 days
+#   - Weekly backups: 28 days (4 weeks)
+#   - Monthly backups: 365 days (12 months)
+# ============================================================================
+
+# Run automated backup daily at 2:00 AM
+0 2 * * * root /bin/bash /opt/moodle-deployment/backup-vm.sh >> /var/log/moodle-backup.log 2>&1
