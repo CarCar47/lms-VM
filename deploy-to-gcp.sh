@@ -338,6 +338,16 @@ chmod -R 755 /mnt/moodle-data
 curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
 bash add-google-cloud-ops-agent-repo.sh --also-install
 
+# Run LAMP setup script in background (survives boot, no SSH dependency)
+# This is the INDUSTRY STANDARD approach - runs during boot via cloud-init
+# Firewall configuration won't break deployment since there's no SSH session
+if [[ -f /opt/moodle-deployment/setup-vm.sh ]]; then
+    echo "Starting LAMP setup script..."
+    cd /opt/moodle-deployment || exit 1
+    nohup bash setup-vm.sh > /var/log/moodle-setup.log 2>&1 &
+    echo "LAMP setup started at $(date). Check /var/log/moodle-setup.log for progress."
+fi
+
 echo "Moodle VM startup complete"
 EOF
 )
@@ -348,24 +358,31 @@ EOF
 
 log "Creating VM instance: $INSTANCE_NAME..."
 
+# Write startup script to temporary file (industry standard for complex scripts)
+STARTUP_SCRIPT_FILE="/tmp/moodle-startup-script-$$.sh"
+echo "$STARTUP_SCRIPT" > "$STARTUP_SCRIPT_FILE"
+
 gcloud compute instances create "$INSTANCE_NAME" \
     --project="$PROJECT_ID" \
     --zone="$ZONE" \
     --machine-type="$MACHINE_TYPE" \
     --network-interface="network-tier=PREMIUM,subnet=$SUBNET,address=$STATIC_IP" \
-    --metadata="startup-script=$STARTUP_SCRIPT" \
+    --metadata-from-file=startup-script="$STARTUP_SCRIPT_FILE" \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --service-account="$SERVICE_ACCOUNT" \
     --scopes=cloud-platform \
     --tags="$NETWORK_TAGS" \
-    --create-disk="auto-delete=yes,boot=yes,device-name=$INSTANCE_NAME,image=projects/$OS_IMAGE_PROJECT/global/images/family=$OS_IMAGE,mode=rw,size=$BOOT_DISK_SIZE,type=projects/$PROJECT_ID/zones/$ZONE/diskTypes/$DISK_TYPE" \
+    --create-disk="auto-delete=yes,boot=yes,device-name=$INSTANCE_NAME,image=projects/$OS_IMAGE_PROJECT/global/images/family/$OS_IMAGE,mode=rw,size=$BOOT_DISK_SIZE,type=projects/$PROJECT_ID/zones/$ZONE/diskTypes/$DISK_TYPE" \
     --disk="name=$DATA_DISK_NAME,device-name=$DATA_DISK_NAME,mode=rw,boot=no" \
     --no-shielded-secure-boot \
     --shielded-vtpm \
     --shielded-integrity-monitoring \
     --labels="environment=$ENVIRONMENT,application=moodle,managed-by=script,static-ip=$STATIC_IP_NAME,service-account=$CUSTOM_SERVICE_ACCOUNT_NAME" \
     --reservation-affinity=any
+
+# Clean up temporary file
+rm -f "$STARTUP_SCRIPT_FILE"
 
 log "VM instance created successfully!"
 
@@ -446,17 +463,45 @@ rm -rf "$UPLOAD_DIR"
 log "Files uploaded successfully"
 
 # ============================================================================
-# RUN SETUP SCRIPT ON VM
+# MONITOR SETUP SCRIPT COMPLETION
 # ============================================================================
+# INDUSTRY STANDARD: Monitor startup script completion instead of synchronous SSH
+# The setup script runs via startup script (cloud-init), not over SSH
+# This prevents firewall configuration from breaking deployment
 
-log "Running setup script on VM..."
-log "This may take 10-15 minutes..."
+log "Monitoring LAMP setup completion (runs via startup script)..."
+log "This may take 15-20 minutes (15 steps including firewall configuration)..."
+info "Setup logs: /var/log/moodle-setup.log on VM"
 
-gcloud compute ssh "$INSTANCE_NAME" --zone="$ZONE" --command="
-    sudo bash /opt/moodle-deployment/setup-vm.sh
-"
+# Poll for completion marker
+MAX_WAIT=1200  # 20 minutes max wait
+ELAPSED=0
+POLL_INTERVAL=30
 
-log "Setup script completed"
+while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+    # Check if setup completed (completion marker exists)
+    if gcloud compute ssh "$INSTANCE_NAME" --zone="$ZONE" \
+        --command="test -f /opt/moodle-deployment/.setup-complete" &> /dev/null; then
+        log "LAMP setup completed successfully!"
+        break
+    fi
+
+    # Show progress update every 2 minutes
+    if [[ $((ELAPSED % 120)) -eq 0 ]] && [[ $ELAPSED -gt 0 ]]; then
+        info "Still running... ($((ELAPSED / 60)) minutes elapsed)"
+        info "You can monitor progress: gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --command='tail -f /var/log/moodle-setup.log'"
+    fi
+
+    sleep $POLL_INTERVAL
+    ELAPSED=$((ELAPSED + POLL_INTERVAL))
+done
+
+# Check if setup completed or timed out
+if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+    error "Setup script timeout after $((MAX_WAIT / 60)) minutes. Check /var/log/moodle-setup.log on VM for details."
+fi
+
+log "LAMP stack setup completed (all 15 steps)"
 
 # ============================================================================
 # COPY MOODLE FILES TO WEB DIRECTORY

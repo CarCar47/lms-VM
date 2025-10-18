@@ -432,6 +432,94 @@ bash deploy-production-golden.sh moodle-client3 --skip-optional --yes
 
 ---
 
+## ⚠️ Moodle 5.1 Critical Configuration Notes
+
+**IMPORTANT:** Read this section before deployment to avoid common configuration issues.
+
+### Password Reset - Shell Escaping Issue
+
+**CRITICAL:** Do NOT use shell SQL commands or CLI password arguments for password resets.
+
+**Problem:** Shell escaping corrupts password hashes containing special characters (`, $, !, etc.), causing login failures.
+
+**WRONG Approach:**
+```bash
+# DO NOT DO THIS - Hash gets corrupted
+mysql -u root -p << EOF
+UPDATE mdl_user SET password = '\$6\$rounds=...' WHERE username = 'admin';
+EOF
+```
+
+**CORRECT Approach:** Use PHP script with Moodle Database API
+
+See detailed guide: [MOODLE-5.1-PASSWORD-RESET-GUIDE.md](MOODLE-5.1-PASSWORD-RESET-GUIDE.md)
+
+### Moodle 5.1 config.php Configuration
+
+**NEVER set `$CFG->dirroot` manually for Moodle 5.1**
+
+Moodle 5.1 uses a new `/public/` subdirectory structure. Manually setting dirroot causes `Undefined property: $libdir` errors.
+
+**WRONG:**
+```php
+$CFG->dirroot = '/var/www/html';  // CAUSES ERRORS!
+```
+
+**CORRECT:**
+```php
+// Let Moodle auto-detect dirroot - DO NOT SET IT
+$CFG->wwwroot   = 'http://your-domain.com';
+$CFG->dataroot  = '/var/moodledata';
+$CFG->admin = 'admin';
+$CFG->directorypermissions = 02777;
+
+require_once(__DIR__ . '/lib/setup.php');
+```
+
+### Database wwwroot Requirement
+
+**ALWAYS set wwwroot in the mdl_config database table**
+
+Missing this causes "Invalid Login Token" CSRF errors.
+
+**Required after installation:**
+```bash
+mysql -u root -p << 'EOF'
+INSERT INTO moodle_lms.mdl_config (name, value)
+VALUES ('wwwroot', 'http://YOUR_DOMAIN')
+ON DUPLICATE KEY UPDATE value='http://YOUR_DOMAIN';
+EOF
+```
+
+### MariaDB 10.6+ Password Syntax
+
+MariaDB 10.6+ changed password syntax. Old MySQL 5.x commands fail.
+
+**WRONG (MySQL 5.x):**
+```sql
+UPDATE mysql.user SET Password=PASSWORD('pass') WHERE User='root';
+```
+
+**CORRECT (MariaDB 10.6+):**
+```sql
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'password';
+```
+
+**Note:** `setup-vm.sh` already uses correct syntax.
+
+### Common Issues & Solutions
+
+| Issue | Solution |
+|-------|----------|
+| Invalid Login Token | Add wwwroot to mdl_config table |
+| Invalid Login (after reset) | Use PHP script method (see PASSWORD-RESET guide) |
+| Undefined property $libdir | Remove $CFG->dirroot from config.php |
+| UFW firewall syntax error | Fixed in setup-vm.sh (v1.0.1+) |
+
+**Troubleshooting Guide:** [TROUBLESHOOTING-LOGIN-ISSUES.md](TROUBLESHOOTING-LOGIN-ISSUES.md)
+
+---
+
 ## File Structure
 
 ```
@@ -562,9 +650,11 @@ For professional deployment, customization, or ongoing support:
 
 ## Changelog
 
-### Version 1.1.0 (2025-10-17) - Production "Golden Copy" Edition
+### Version 1.0.0 (2025-10-17) - Production "Golden Copy" Edition
 
-**MAJOR UPDATE**: Enterprise-grade security and compliance features
+**INITIAL RELEASE**: Enterprise-grade VM deployment with automated security hardening
+
+This is the first production-ready release of the Moodle VM deployment package - a complete, standalone solution separate from the Cloud Run edition.
 
 **Phase 1: Infrastructure Enhancements**
 - ✅ Redis cache store integration (MUC performance boost)
@@ -689,34 +779,11 @@ For professional deployment, customization, or ongoing support:
 - ✅ NIST Cybersecurity Framework Aligned
 - ✅ SOC 2 Ready
 
-**Breaking Changes**
-- OS Login with 2FA is now recommended (replaces SSH keys)
-- Secrets Manager integration changes .env usage (credentials in Secret Manager)
-- Static IP replaces ephemeral IPs (requires DNS update)
-- IAP replaces direct SSH access (requires gcloud IAP tunnel)
-
-**Upgrade Path**
-For existing v1.0.0 deployments:
-1. Run `cis-hardening.sh` for CIS compliance
-2. Run `secrets-manager-setup.sh` to migrate credentials
-3. Run `cloud-armor-setup.sh` for WAF protection
-4. Run `iap-setup.sh` for zero-trust access
-5. Run `scc-setup.sh` for continuous monitoring
-6. Update config.php with Redis configuration
-7. Update DNS to static IP
-
----
-
-### Version 1.0.0 (2025-01-17)
-
-**Initial Release**:
-- Moodle 5.1 STABLE (Build: 20251006)
-- Ubuntu 22.04 LTS base
-- Automated deployment scripts
-- Basic security hardening
-- Automated backup system
-- Cloud Monitoring integration
-- Comprehensive documentation
+**Deployment Note**
+This is the inaugural v1.0.0 release of the VM edition. No upgrade path needed - deploy fresh using:
+```bash
+bash deploy-production-golden.sh moodle-demo
+```
 
 ---
 
