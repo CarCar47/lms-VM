@@ -87,6 +87,33 @@ fi
 log "Preflight checks passed"
 
 # ============================================================================
+# WAIT FOR APT LOCKS TO CLEAR (Industry Standard - Handle Boot Race Conditions)
+# ============================================================================
+
+log "Waiting for apt locks to clear..."
+wait_for_apt() {
+    local max_attempts=60  # 5 minutes max wait
+    local attempt=0
+
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+          fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+          fuser /var/lib/apt/lists/lock >/dev/null 2>&1 ; do
+
+        attempt=$((attempt + 1))
+        if [[ $attempt -ge $max_attempts ]]; then
+            error "Timeout waiting for apt locks to clear after 5 minutes"
+        fi
+
+        log "  Waiting for apt lock to clear... (attempt $attempt/$max_attempts)"
+        sleep 5
+    done
+}
+
+# Wait for any startup script apt operations to complete
+wait_for_apt
+log "Apt locks cleared - proceeding with setup"
+
+# ============================================================================
 # STEP 1: SYSTEM UPDATE
 # ============================================================================
 
@@ -152,12 +179,24 @@ if [[ -z "$DB_ROOT_PASSWORD" ]]; then
 fi
 
 # Secure MariaDB installation (non-interactive)
-mysql -e "UPDATE mysql.user SET Password=PASSWORD('${DB_ROOT_PASSWORD}') WHERE User='root';"
-mysql -e "DELETE FROM mysql.user WHERE User='';"
-mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
-mysql -e "DROP DATABASE IF EXISTS test;"
-mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
-mysql -e "FLUSH PRIVILEGES;"
+# MariaDB 10.6+ compatible syntax
+mysql << EOF
+-- Set root password (MariaDB 10.6+ method)
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
+
+-- Remove anonymous users
+DELETE FROM mysql.global_priv WHERE User='';
+
+-- Remove remote root access
+DELETE FROM mysql.global_priv WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+
+-- Drop test database
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test_%';
+
+-- Flush privileges
+FLUSH PRIVILEGES;
+EOF
 
 log "MariaDB installed and secured"
 
@@ -394,11 +433,11 @@ ufw --force default deny incoming
 ufw --force default allow outgoing
 
 # Allow SSH (IMPORTANT!)
-ufw --force allow 22/tcp
+ufw allow 22/tcp
 
 # Allow HTTP and HTTPS
-ufw --force allow 80/tcp
-ufw --force allow 443/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
 
 # Enable firewall
 ufw --force enable
@@ -520,6 +559,9 @@ warn "For production: Run 'sudo bash secrets-manager-setup.sh' to migrate to Sec
 # ============================================================================
 
 log "Step 14: Creating environment file..."
+
+# Create environment.d directory if it doesn't exist (Ubuntu 22.04 fix)
+mkdir -p /etc/environment.d
 
 cat > /etc/environment.d/moodle.conf << EOF
 # Moodle environment variables
@@ -721,5 +763,9 @@ log ""
 log "Credentials saved to: /root/.moodle-credentials"
 log "Setup log saved to: ${LOG_FILE}"
 log "============================================"
+
+# Create completion marker for orchestration monitoring
+touch /opt/moodle-deployment/.setup-complete
+log "Setup completion marker created"
 
 exit 0
